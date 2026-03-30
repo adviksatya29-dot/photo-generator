@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Print Photo</title>
+
+<style>
+@page {
+    size: A4;
+    margin: 10mm;
+}
+
+body {
+    margin: 0;
+    background: white;
+    display: flex;
+    justify-content: center;
+}
+
+img {
+    width: 100%;
+    height: auto;
+}
+</style>
+
+</head>
+<body>
+
+<img src="{{ url_for('static', filename=image) }}">
+
+<script>
+window.onload = function() {
+    window.print();
+}
+</script>
+
+</body>
+</html>
