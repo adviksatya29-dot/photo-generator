@@ -3,6 +3,7 @@ import os
 import cv2
 import numpy as np
 from rembg import remove
+import json
 
 app = Flask(__name__)
 app.secret_key = "secret123"
@@ -20,7 +21,11 @@ def login():
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
-        if username == "Advik" and password == "321":
+
+        with open("users.json", "r") as f:
+            users = json.load(f)
+
+        if username in users and users[username] == password:
             session["user"] = username
             return redirect(url_for("dashboard"))
         else:
@@ -52,12 +57,20 @@ def generate():
         return redirect(url_for("login"))
 
     try:
+        # -------- COPIES --------
+        copies = request.form.get("copies")
+        if not copies:
+            copies = 6
+        else:
+            copies = int(copies)
+        copies = min(copies, 8)
+
+        # -------- BRIGHTNESS --------
         brightness = request.form.get("brightness", "medium")
-        copies = int(request.form.get("copies", 6))
 
         input_path = os.path.join(UPLOAD_FOLDER, "input.jpg")
 
-        # Remove background
+        # -------- REMOVE BACKGROUND --------
         with open(input_path, "rb") as f:
             output = remove(f.read())
 
@@ -70,13 +83,12 @@ def generate():
         if img is None:
             return "Error loading image"
 
-        # Ensure 4 channels
         if img.shape[2] == 3:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
 
         b, g, r, a = cv2.split(img)
 
-        # Blue background
+        # -------- BLUE BACKGROUND --------
         bg = np.full((img.shape[0], img.shape[1], 3), (255, 0, 0), dtype=np.uint8)
 
         alpha = a / 255.0
@@ -85,7 +97,7 @@ def generate():
         fg = cv2.merge((b, g, r))
         result = (fg * alpha + bg * (1 - alpha)).astype(np.uint8)
 
-        # Brightness
+        # -------- BRIGHTNESS CONTROL --------
         if brightness == "low":
             beta = -20
         elif brightness == "high":
@@ -93,16 +105,26 @@ def generate():
         else:
             beta = 0
 
-        result = cv2.convertScaleAbs(result, alpha=1, beta=beta)
+        # -------- IMAGE ENHANCEMENT --------
+        result = cv2.convertScaleAbs(result, alpha=1.2, beta=beta)
 
-        # Passport size (simple correct)
-        final = cv2.resize(result, (413, 531))
+        # Sharpen
+        kernel = np.array([[0, -1, 0],
+                           [-1, 5,-1],
+                           [0, -1, 0]])
+        result = cv2.filter2D(result, -1, kernel)
 
-        # Border
-        cv2.rectangle(final, (0, 0), (412, 530), (0, 0, 0), 2)
+        # Smooth (noise remove)
+        result = cv2.bilateralFilter(result, 9, 75, 75)
 
-        # Create sheet (2 rows x 3 cols)
-        rows, cols = 2, 3
+        # -------- PASSPORT SIZE --------
+        final = cv2.resize(result, (413, 413), interpolation=cv2.INTER_CUBIC)
+
+        # -------- BORDER --------
+        cv2.rectangle(final, (0, 0), (412, 412), (0, 0, 0), 2)
+
+        # -------- 4x6 LAYOUT (8 PHOTOS) --------
+        rows, cols = 2, 4
         h, w = final.shape[:2]
 
         sheet = np.ones((rows*h, cols*w, 3), dtype=np.uint8) * 255
@@ -130,6 +152,6 @@ def logout():
     return redirect(url_for("login"))
 
 
-# ---------------- RUN ----------------
+# ---------------- RUN APP ----------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0",port=10000)
+    app.run(host="0.0.0.0", port=10000)
